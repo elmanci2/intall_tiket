@@ -18,6 +18,9 @@ install_if_missing() {
 read -p "📦 URL del repositorio a clonar: " REPO_URL
 REPO_NAME=$(basename "$REPO_URL" .git)
 
+# Guardar la ruta del directorio del instalador
+INSTALLER_DIR="$(pwd)"
+
 # Subir un nivel fuera de "instalador/"
 cd ..
 
@@ -51,9 +54,9 @@ export PATH="$HOME/.bun/bin:$PATH"
 
 # Ejecutar scripts en sus carpetas (relativas al proyecto clonado)
 echo -e "${GREEN}🚀 Ejecutando backend...${RESET}"
-bash ../back.sh "$(pwd)/back"
+bash "$INSTALLER_DIR/back.sh" "$(pwd)/back"
 
 echo -e "${GREEN}🚀 Ejecutando frontend...${RESET}"
-bash ../front.sh "$(pwd)/front"
+bash "$INSTALLER_DIR/front.sh" "$(pwd)/front"
 
 echo -e "${GREEN}🎉 Hola, soy Susana. Todo está listo, ¡a trabajar!${RESET}"
