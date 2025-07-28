@@ -17,6 +17,9 @@ install_if_missing() {
 read -p "📦 URL del repositorio a clonar: " REPO_URL
 REPO_NAME=$(basename "$REPO_URL" .git)
 
+# Subir un nivel fuera de "instalador/"
+cd ..
+
 # Clonar repositorio
 echo -e "${GREEN}🔁 Clonando $REPO_URL...${RESET}"
 git clone "$REPO_URL"
@@ -30,9 +33,10 @@ install_if_missing npm "sudo apt install -y npm"
 install_if_missing pm2 "sudo npm install -g pm2"
 install_if_missing bun "curl -fsSL https://bun.sh/install | bash && export PATH=\"\$HOME/.bun/bin:\$PATH\""
 
+# Cargar Bun para esta sesión
 export PATH="$HOME/.bun/bin:$PATH"
 
-# Ejecutar scripts en sus carpetas
+# Ejecutar scripts en sus carpetas (relativas al proyecto clonado)
 echo -e "${GREEN}🚀 Ejecutando backend...${RESET}"
 bash ./back/back.sh "$(pwd)/back"
 
