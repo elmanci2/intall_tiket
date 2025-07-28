@@ -388,11 +388,8 @@ cat > package-server.json <<EOF
 }
 EOF
 
-if command -v bun &>/dev/null; then
-    bun install --cwd . --from package-server.json
-else
-    npm install compression helmet
-fi
+npm install express compression helmet
+
 
 echo -e "${BLUE}🚀 Iniciando con PM2...${RESET}"
 
