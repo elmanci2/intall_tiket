@@ -3,6 +3,7 @@ set -e
 
 GREEN="\033[0;32m"
 YELLOW="\033[0;33m"
+RED="\033[0;31m"
 RESET="\033[0m"
 
 install_if_missing() {
@@ -41,22 +42,81 @@ else
   cd "$REPO_NAME"
 fi
 
+# Verificar estructura del proyecto
+PROJECT_ROOT="$(pwd)"
+echo -e "${GREEN}📁 Directorio del proyecto: $PROJECT_ROOT${RESET}"
+
+# Definir rutas directas (sabemos que son backend y frontend)
+BACKEND_DIR="$PROJECT_ROOT/backend"
+FRONTEND_DIR="$PROJECT_ROOT/frontend"
+
+# Verificar que las carpetas existen
+if [ ! -d "$BACKEND_DIR" ]; then
+  echo -e "${RED}❌ No se encontró la carpeta backend${RESET}"
+  echo -e "${YELLOW}📁 Carpetas disponibles:${RESET}"
+  ls -la
+  exit 1
+fi
+
+if [ ! -d "$FRONTEND_DIR" ]; then
+  echo -e "${RED}❌ No se encontró la carpeta frontend${RESET}"
+  echo -e "${YELLOW}📁 Carpetas disponibles:${RESET}"
+  ls -la
+  exit 1
+fi
+
+# Verificar que tienen package.json
+if [ ! -f "$BACKEND_DIR/package.json" ]; then
+  echo -e "${RED}❌ No se encontró package.json en la carpeta backend${RESET}"
+  exit 1
+fi
+
+if [ ! -f "$FRONTEND_DIR/package.json" ]; then
+  echo -e "${RED}❌ No se encontró package.json en la carpeta frontend${RESET}"
+  exit 1
+fi
+
+echo -e "${GREEN}✔️ Encontradas carpetas: backend y frontend${RESET}"
+
 # Requisitos
-install_if_missing curl "sudo apt install -y curl"
+echo -e "${GREEN}🔧 Verificando dependencias...${RESET}"
+install_if_missing curl "sudo apt update && sudo apt install -y curl"
 install_if_missing git "sudo apt install -y git"
 install_if_missing node "curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && sudo apt install -y nodejs"
 install_if_missing npm "sudo apt install -y npm"
 install_if_missing pm2 "sudo npm install -g pm2"
-install_if_missing bun "curl -fsSL https://bun.sh/install | bash && export PATH=\"\$HOME/.bun/bin:\$PATH\""
+
+# Instalar Bun si no existe
+if ! command -v bun &>/dev/null; then
+  echo -e "${GREEN}🧩 Instalando Bun...${RESET}"
+  curl -fsSL https://bun.sh/install | bash
+  export PATH="$HOME/.bun/bin:$PATH"
+  # Agregar a bashrc para futuras sesiones
+  echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.bashrc
+else
+  echo -e "${GREEN}✔️ Bun ya está instalado${RESET}"
+fi
 
 # Cargar Bun para esta sesión
 export PATH="$HOME/.bun/bin:$PATH"
 
-# Ejecutar scripts en sus carpetas (relativas al proyecto clonado)
-echo -e "${GREEN}🚀 Ejecutando backend...${RESET}"
-bash "$INSTALLER_DIR/back.sh" "$(pwd)/back"
+# Verificar que los scripts del instalador existen
+if [ ! -f "$INSTALLER_DIR/back.sh" ]; then
+  echo -e "${RED}❌ No se encontró $INSTALLER_DIR/back.sh${RESET}"
+  exit 1
+fi
 
-echo -e "${GREEN}🚀 Ejecutando frontend...${RESET}"
-bash "$INSTALLER_DIR/front.sh" "$(pwd)/front"
+if [ ! -f "$INSTALLER_DIR/front.sh" ]; then
+  echo -e "${RED}❌ No se encontró $INSTALLER_DIR/front.sh${RESET}"
+  exit 1
+fi
 
-echo -e "${GREEN}🎉 Hola, soy Susana. Todo está listo, ¡a trabajar!${RESET}"
+# Ejecutar scripts en sus carpetas (usando las rutas detectadas)
+echo -e "${GREEN}🚀 Ejecutando configuración del backend...${RESET}"
+bash "$INSTALLER_DIR/back.sh" "$BACKEND_DIR"
+
+echo -e "${GREEN}🚀 Ejecutando configuración del frontend...${RESET}"
+bash "$INSTALLER_DIR/front.sh" "$FRONTEND_DIR"
+
+echo -e "${GREEN}🎉 ¡Todo está listo! Backend y frontend configurados correctamente.${RESET}"
+echo -e "${GREEN}📝 Revisa los logs anteriores para ver las URLs de acceso.${RESET}"
