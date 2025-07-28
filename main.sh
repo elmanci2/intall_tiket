@@ -2,6 +2,7 @@
 set -e
 
 GREEN="\033[0;32m"
+YELLOW="\033[0;33m"
 RESET="\033[0m"
 
 install_if_missing() {
@@ -20,10 +21,22 @@ REPO_NAME=$(basename "$REPO_URL" .git)
 # Subir un nivel fuera de "instalador/"
 cd ..
 
-# Clonar repositorio
-echo -e "${GREEN}🔁 Clonando $REPO_URL...${RESET}"
-git clone "$REPO_URL"
-cd "$REPO_NAME"
+# Verificar si la carpeta ya existe
+if [ -d "$REPO_NAME" ]; then
+  echo -e "${YELLOW}📁 La carpeta '$REPO_NAME' ya existe. Usando carpeta existente...${RESET}"
+  cd "$REPO_NAME"
+  
+  # Opcional: actualizar el repositorio existente
+  if [ -d ".git" ]; then
+    echo -e "${GREEN}🔄 Actualizando repositorio existente...${RESET}"
+    git pull origin $(git branch --show-current) || echo -e "${YELLOW}⚠️ No se pudo actualizar automáticamente${RESET}"
+  fi
+else
+  # Clonar repositorio solo si no existe
+  echo -e "${GREEN}🔁 Clonando $REPO_URL...${RESET}"
+  git clone "$REPO_URL"
+  cd "$REPO_NAME"
+fi
 
 # Requisitos
 install_if_missing curl "sudo apt install -y curl"
@@ -38,9 +51,9 @@ export PATH="$HOME/.bun/bin:$PATH"
 
 # Ejecutar scripts en sus carpetas (relativas al proyecto clonado)
 echo -e "${GREEN}🚀 Ejecutando backend...${RESET}"
-bash ./back/back.sh "$(pwd)/back"
+bash ./back.sh "$(pwd)/back"
 
 echo -e "${GREEN}🚀 Ejecutando frontend...${RESET}"
-bash ./front/front.sh "$(pwd)/front"
+bash ./front.sh "$(pwd)/front"
 
 echo -e "${GREEN}🎉 Hola, soy Susana. Todo está listo, ¡a trabajar!${RESET}"

@@ -11,7 +11,7 @@ echo ""
 
 POSTGRES_DB="$INSTANCIA"
 REDIS_PORT=6379
-BACKEND_PORT=3000
+BACKEND_PORT=4000
 
 sudo bash -c "cat > /root/back_credentials.txt <<EOF
 INSTANCIA=${INSTANCIA}
