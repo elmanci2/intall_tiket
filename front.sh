@@ -141,9 +141,6 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
     
-    # Logs específicos para el frontend
-    access_log /var/log/nginx/${NAME}-frontend.access.log;
-    error_log /var/log/nginx/${NAME}-frontend.error.log;
 }
 EOF
     
