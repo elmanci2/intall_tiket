@@ -391,13 +391,28 @@ if command -v bun &>/dev/null; then
             exit 1
         }
     fi
+
+    # 👇 Aseguramos instalación de baileys
+    echo -e "${GREEN}Verificando e instalando @whiskeysockets/baileys...${RESET}"
+    bun add @whiskeysockets/baileys || {
+        echo -e "${RED}❌ No se pudo instalar @whiskeysockets/baileys${RESET}"
+        exit 1
+    }
 else
     echo -e "${GREEN}Using npm for package installation...${RESET}"
     npm install || {
         echo -e "${RED}❌ Error instalando dependencias${RESET}"
         exit 1
     }
+
+    # 👇 También lo instalamos por npm en caso necesario
+    echo -e "${GREEN}Verificando e instalando @whiskeysockets/baileys...${RESET}"
+    npm install @whiskeysockets/baileys || {
+        echo -e "${RED}❌ No se pudo instalar @whiskeysockets/baileys${RESET}"
+        exit 1
+    }
 fi
+
 
 echo -e "${GREEN}✅ Dependencias instaladas${RESET}"
 
