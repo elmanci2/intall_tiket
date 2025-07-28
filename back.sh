@@ -85,7 +85,7 @@ POSTGRES_DB="$INSTANCIA"
 REDIS_PORT=6379
 BACKEND_PORT=4000
 
-# Función para instalar y configurar Nginx
+# Función para instalar y configurar Nginx (configuración inicial HTTP)
 setup_nginx() {
     echo -e "${BLUE}🌐 Configurando Nginx...${RESET}"
     
@@ -104,6 +104,7 @@ setup_nginx() {
     sudo mkdir -p /etc/nginx/sites-available
     sudo mkdir -p /etc/nginx/sites-enabled
     sudo mkdir -p /var/log/nginx
+    sudo mkdir -p /var/www/html
     
     # Verificar que nginx.conf incluye sites-enabled
     if ! sudo grep -q "include /etc/nginx/sites-enabled" /etc/nginx/nginx.conf; then
@@ -111,9 +112,75 @@ setup_nginx() {
         sudo sed -i '/http {/a\\tinclude /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf
     fi
     
-    # Crear configuración de Nginx para el backend
-    echo -e "${BLUE}📝 Creando configuración de Nginx...${RESET}"
-    sudo tee "/etc/nginx/sites-available/${INSTANCIA}-backend" > /dev/null <<EOF
+    # Crear configuración HTTP inicial (sin SSL)
+    echo -e "${BLUE}📝 Creando configuración HTTP inicial...${RESET}"
+    sudo tee "/etc/nginx/sites-available/${INSTANCIA}-backend-http" > /dev/null <<EOF
+server {
+    listen 80;
+    server_name ${BACKEND_DOMAIN};
+    
+    # Para validación de Let's Encrypt
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+    
+    # Configuración del proxy al backend
+    location / {
+        proxy_pass http://localhost:${BACKEND_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+        
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        
+        # Buffer settings
+        proxy_buffer_size 4k;
+        proxy_buffers 4 32k;
+        proxy_busy_buffers_size 64k;
+    }
+    
+    # Configuración para WebSockets (si es necesario)
+    location /socket.io/ {
+        proxy_pass http://localhost:${BACKEND_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+    
+    # Logs
+    access_log /var/log/nginx/${INSTANCIA}-backend.access.log;
+    error_log /var/log/nginx/${INSTANCIA}-backend.error.log;
+}
+EOF
+    
+    # Habilitar la configuración HTTP inicial
+    echo -e "${BLUE}🔗 Habilitando configuración HTTP inicial...${RESET}"
+    sudo ln -sf "/etc/nginx/sites-available/${INSTANCIA}-backend-http" "/etc/nginx/sites-enabled/${INSTANCIA}-backend"
+    
+    # Remover configuración por defecto si existe
+    sudo rm -f /etc/nginx/sites-enabled/default
+    
+    echo -e "${GREEN}✅ Configuración HTTP inicial de Nginx creada${RESET}"
+}
+
+# Función para crear configuración SSL (se ejecuta después de obtener certificados)
+setup_nginx_ssl() {
+    echo -e "${BLUE}🔒 Configurando Nginx con SSL...${RESET}"
+    
+    # Crear configuración completa con SSL
+    sudo tee "/etc/nginx/sites-available/${INSTANCIA}-backend-ssl" > /dev/null <<EOF
 server {
     listen 80;
     server_name ${BACKEND_DOMAIN};
@@ -126,7 +193,7 @@ server {
     listen 443 ssl http2;
     server_name ${BACKEND_DOMAIN};
     
-    # Certificados SSL (se configurarán con Certbot)
+    # Certificados SSL
     ssl_certificate /etc/letsencrypt/live/${BACKEND_DOMAIN}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${BACKEND_DOMAIN}/privkey.pem;
     
@@ -184,14 +251,11 @@ server {
 }
 EOF
     
-    # Habilitar el sitio
-    echo -e "${BLUE}🔗 Habilitando sitio...${RESET}"
-    sudo ln -sf "/etc/nginx/sites-available/${INSTANCIA}-backend" "/etc/nginx/sites-enabled/"
+    # Activar configuración SSL
+    echo -e "${BLUE}🔗 Activando configuración SSL...${RESET}"
+    sudo ln -sf "/etc/nginx/sites-available/${INSTANCIA}-backend-ssl" "/etc/nginx/sites-enabled/${INSTANCIA}-backend"
     
-    # Remover configuración por defecto si existe
-    sudo rm -f /etc/nginx/sites-enabled/default
-    
-    echo -e "${GREEN}✅ Configuración de Nginx creada${RESET}"
+    echo -e "${GREEN}✅ Configuración SSL de Nginx activada${RESET}"
 }
 
 # Función para configurar Certbot y SSL
@@ -226,46 +290,10 @@ setup_certbot() {
         fi
     fi
     
-    # Crear directorio para archivos temporales de Nginx si no existe
-    sudo mkdir -p /var/www/html
-    
-    # Configuración temporal de Nginx sin SSL para validación
-    echo -e "${BLUE}📝 Creando configuración temporal para validación SSL...${RESET}"
-    sudo tee "/etc/nginx/sites-available/${INSTANCIA}-backend-temp" > /dev/null <<EOF
-server {
-    listen 80;
-    server_name ${BACKEND_DOMAIN};
-    
-    location /.well-known/acme-challenge/ {
-        root /var/www/html;
-    }
-    
-    location / {
-        proxy_pass http://localhost:${BACKEND_PORT};
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-}
-EOF
-    
-    # Activar configuración temporal
-    echo -e "${BLUE}🔄 Activando configuración temporal...${RESET}"
-    sudo ln -sf "/etc/nginx/sites-available/${INSTANCIA}-backend-temp" "/etc/nginx/sites-enabled/${INSTANCIA}-backend"
-    
-    # Verificar configuración antes de recargar
-    if sudo nginx -t; then
-        sudo systemctl reload nginx
-        echo -e "${GREEN}✅ Configuración temporal activada${RESET}"
-    else
-        echo -e "${RED}❌ Error en configuración temporal de Nginx${RESET}"
-        return 1
-    fi
-    
-    # Obtener certificado SSL
+    # Obtener certificado SSL usando webroot
     echo -e "${GREEN}🔐 Obteniendo certificado SSL...${RESET}"
-    if sudo certbot certonly --nginx \
+    if sudo certbot certonly --webroot \
+        --webroot-path=/var/www/html \
         --email "$CERTBOT_EMAIL" \
         --agree-tos \
         --no-eff-email \
@@ -274,16 +302,17 @@ EOF
         
         echo -e "${GREEN}✅ Certificado SSL obtenido exitosamente${RESET}"
         
-        # Activar configuración SSL completa
-        echo -e "${BLUE}🔄 Activando configuración SSL completa...${RESET}"
-        sudo ln -sf "/etc/nginx/sites-available/${INSTANCIA}-backend" "/etc/nginx/sites-enabled/"
+        # Ahora configurar Nginx con SSL
+        setup_nginx_ssl
         
-        # Verificar configuración y recargar
+        # Verificar configuración SSL y recargar
+        echo -e "${BLUE}🔍 Verificando configuración SSL...${RESET}"
         if sudo nginx -t; then
             sudo systemctl reload nginx
             echo -e "${GREEN}✅ Nginx recargado con configuración SSL${RESET}"
         else
-            echo -e "${RED}❌ Error en la configuración de Nginx con SSL${RESET}"
+            echo -e "${RED}❌ Error en la configuración SSL de Nginx${RESET}"
+            echo -e "${YELLOW}🔧 Manteniendo configuración HTTP${RESET}"
             return 1
         fi
         
@@ -295,12 +324,45 @@ EOF
         
     else
         echo -e "${RED}❌ Error obteniendo certificado SSL${RESET}"
-        echo -e "${YELLOW}🔧 Manteniendo configuración HTTP temporal${RESET}"
+        echo -e "${YELLOW}🔧 El sitio seguirá funcionando con HTTP${RESET}"
         return 1
     fi
 }
 
-# Función para verificar firewall
+# Función para diagnosticar problemas de base de datos
+diagnose_database() {
+    echo -e "${BLUE}🔍 Diagnosticando base de datos...${RESET}"
+    
+    # Verificar conexión a PostgreSQL
+    if sudo -u postgres psql -d ${POSTGRES_DB} -c "\conninfo" &>/dev/null; then
+        echo -e "${GREEN}✅ Conexión a PostgreSQL exitosa${RESET}"
+    else
+        echo -e "${RED}❌ Error de conexión a PostgreSQL${RESET}"
+        return 1
+    fi
+    
+    # Listar tablas existentes
+    echo -e "${BLUE}📋 Tablas existentes:${RESET}"
+    sudo -u postgres psql -d ${POSTGRES_DB} -c "\dt" 2>/dev/null || echo "No se pudieron listar las tablas"
+    
+    # Verificar estructura de tabla Companies si existe
+    if sudo -u postgres psql -d ${POSTGRES_DB} -c "\d \"Companies\"" &>/dev/null; then
+        echo -e "${BLUE}🏢 Estructura de tabla Companies:${RESET}"
+        sudo -u postgres psql -d ${POSTGRES_DB} -c "\d \"Companies\"" 2>/dev/null || true
+        
+        echo -e "${BLUE}📊 Datos en Companies:${RESET}"
+        sudo -u postgres psql -d ${POSTGRES_DB} -c "SELECT id, name, email FROM \"Companies\" LIMIT 5;" 2>/dev/null || true
+    fi
+    
+    # Verificar si existen índices únicos o constraints
+    echo -e "${BLUE}🔒 Constraints únicos:${RESET}"
+    sudo -u postgres psql -d ${POSTGRES_DB} -c "
+        SELECT tc.constraint_name, tc.table_name, kcu.column_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+        WHERE tc.constraint_type = 'UNIQUE' AND tc.table_name IN ('Companies', 'Users');
+    " 2>/dev/null || true
+}
 setup_firewall() {
     echo -e "${BLUE}🔥 Configurando firewall...${RESET}"
     
@@ -460,8 +522,47 @@ if ! npm run db:migrate; then
     exit 1
 fi
 
-if ! npm run db:seed; then
-    echo -e "${YELLOW}⚠️  Los seeders fallaron, pero continuando...${RESET}"
+# Verificar si ya existen datos antes de ejecutar seeders
+echo -e "${BLUE}🔍 Verificando datos existentes...${RESET}"
+EXISTING_DATA=$(sudo -u postgres psql -d ${POSTGRES_DB} -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('Companies', 'Users');" 2>/dev/null || echo "0")
+
+if [[ $EXISTING_DATA -gt 0 ]]; then
+    echo -e "${YELLOW}⚠️  Detectadas tablas existentes, verificando datos...${RESET}"
+    
+    # Verificar si ya existe una empresa
+    COMPANY_COUNT=$(sudo -u postgres psql -d ${POSTGRES_DB} -t -c "SELECT COUNT(*) FROM \"Companies\";" 2>/dev/null || echo "0")
+    
+    if [[ $COMPANY_COUNT -gt 0 ]]; then
+        echo -e "${YELLOW}📊 Ya existen $COMPANY_COUNT empresa(s) en la base de datos${RESET}"
+        echo -e "${BLUE}🔄 Saltando seeders para evitar duplicados...${RESET}"
+    else
+        echo -e "${BLUE}📝 Ejecutando seeders...${RESET}"
+        if ! npm run db:seed; then
+            echo -e "${YELLOW}⚠️  Error en seeders, diagnosticando...${RESET}"
+            diagnose_database
+            
+            echo -e "${BLUE}🔍 Intentando seeder individual con más detalles:${RESET}"
+            # Intentar ejecutar seeder individual para más información
+            npx sequelize db:seed --seed 20200904070005-create-default-company.js 2>&1 || true
+        fi
+    fi
+else
+    echo -e "${BLUE}📝 Ejecutando seeders en base de datos vacía...${RESET}"
+    if ! npm run db:seed; then
+        echo -e "${YELLOW}⚠️  Error en seeders, intentando limpieza y reintento...${RESET}"
+        
+        # Limpiar datos existentes y reintentar
+        echo -e "${BLUE}🧹 Limpiando datos existentes...${RESET}"
+        sudo -u postgres psql -d ${POSTGRES_DB} -c "TRUNCATE TABLE \"Companies\" RESTART IDENTITY CASCADE;" 2>/dev/null || true
+        sudo -u postgres psql -d ${POSTGRES_DB} -c "TRUNCATE TABLE \"Users\" RESTART IDENTITY CASCADE;" 2>/dev/null || true
+        
+        echo -e "${BLUE}🔄 Reintentando seeders...${RESET}"
+        if ! npm run db:seed; then
+            echo -e "${YELLOW}⚠️  Seeders fallaron definitivamente${RESET}"
+            diagnose_database
+            echo -e "${BLUE}ℹ️  Podrás crear datos manualmente desde la aplicación${RESET}"
+        fi
+    fi
 fi
 
 echo -e "${GREEN}✅ Base de datos configurada${RESET}"
@@ -491,16 +592,17 @@ echo -e "${GREEN}✅ Backend iniciado exitosamente${RESET}"
 setup_firewall
 setup_nginx
 
-# Verificar configuración de Nginx
-echo -e "${BLUE}🔍 Verificando configuración de Nginx...${RESET}"
+# Verificar configuración inicial de Nginx (HTTP)
+echo -e "${BLUE}🔍 Verificando configuración inicial de Nginx...${RESET}"
 if sudo nginx -t; then
     sudo systemctl reload nginx
-    echo -e "${GREEN}✅ Nginx configurado correctamente${RESET}"
+    echo -e "${GREEN}✅ Nginx configurado correctamente (HTTP)${RESET}"
     
     # Configurar SSL con Certbot
+    echo -e "${BLUE}🔒 Iniciando configuración SSL...${RESET}"
     setup_certbot
 else
-    echo -e "${RED}❌ Error en la configuración de Nginx${RESET}"
+    echo -e "${RED}❌ Error en la configuración inicial de Nginx${RESET}"
     sudo nginx -t
     exit 1
 fi
