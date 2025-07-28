@@ -99,7 +99,20 @@ setup_nginx() {
         echo -e "${GREEN}✅ Nginx ya está instalado${RESET}"
     fi
     
+    # Crear directorios de Nginx si no existen
+    echo -e "${BLUE}📁 Verificando/creando directorios de Nginx...${RESET}"
+    sudo mkdir -p /etc/nginx/sites-available
+    sudo mkdir -p /etc/nginx/sites-enabled
+    sudo mkdir -p /var/log/nginx
+    
+    # Verificar que nginx.conf incluye sites-enabled
+    if ! sudo grep -q "include /etc/nginx/sites-enabled" /etc/nginx/nginx.conf; then
+        echo -e "${YELLOW}⚠️  Agregando include para sites-enabled en nginx.conf...${RESET}"
+        sudo sed -i '/http {/a\\tinclude /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf
+    fi
+    
     # Crear configuración de Nginx para el backend
+    echo -e "${BLUE}📝 Creando configuración de Nginx...${RESET}"
     sudo tee "/etc/nginx/sites-available/${INSTANCIA}-backend" > /dev/null <<EOF
 server {
     listen 80;
@@ -172,6 +185,7 @@ server {
 EOF
     
     # Habilitar el sitio
+    echo -e "${BLUE}🔗 Habilitando sitio...${RESET}"
     sudo ln -sf "/etc/nginx/sites-available/${INSTANCIA}-backend" "/etc/nginx/sites-enabled/"
     
     # Remover configuración por defecto si existe
@@ -212,7 +226,11 @@ setup_certbot() {
         fi
     fi
     
+    # Crear directorio para archivos temporales de Nginx si no existe
+    sudo mkdir -p /var/www/html
+    
     # Configuración temporal de Nginx sin SSL para validación
+    echo -e "${BLUE}📝 Creando configuración temporal para validación SSL...${RESET}"
     sudo tee "/etc/nginx/sites-available/${INSTANCIA}-backend-temp" > /dev/null <<EOF
 server {
     listen 80;
@@ -233,8 +251,17 @@ server {
 EOF
     
     # Activar configuración temporal
+    echo -e "${BLUE}🔄 Activando configuración temporal...${RESET}"
     sudo ln -sf "/etc/nginx/sites-available/${INSTANCIA}-backend-temp" "/etc/nginx/sites-enabled/${INSTANCIA}-backend"
-    sudo nginx -t && sudo systemctl reload nginx
+    
+    # Verificar configuración antes de recargar
+    if sudo nginx -t; then
+        sudo systemctl reload nginx
+        echo -e "${GREEN}✅ Configuración temporal activada${RESET}"
+    else
+        echo -e "${RED}❌ Error en configuración temporal de Nginx${RESET}"
+        return 1
+    fi
     
     # Obtener certificado SSL
     echo -e "${GREEN}🔐 Obteniendo certificado SSL...${RESET}"
@@ -248,6 +275,7 @@ EOF
         echo -e "${GREEN}✅ Certificado SSL obtenido exitosamente${RESET}"
         
         # Activar configuración SSL completa
+        echo -e "${BLUE}🔄 Activando configuración SSL completa...${RESET}"
         sudo ln -sf "/etc/nginx/sites-available/${INSTANCIA}-backend" "/etc/nginx/sites-enabled/"
         
         # Verificar configuración y recargar
@@ -255,7 +283,7 @@ EOF
             sudo systemctl reload nginx
             echo -e "${GREEN}✅ Nginx recargado con configuración SSL${RESET}"
         else
-            echo -e "${RED}❌ Error en la configuración de Nginx${RESET}"
+            echo -e "${RED}❌ Error en la configuración de Nginx con SSL${RESET}"
             return 1
         fi
         
@@ -306,6 +334,9 @@ if check_port $BACKEND_PORT; then
     # Intentar detener proceso PM2 existente
     pm2 delete "${INSTANCIA}-backend" 2>/dev/null || true
 fi
+
+# Crear directorio para credenciales si no existe
+sudo mkdir -p /root
 
 # Guardar credenciales
 echo -e "${BLUE}💾 Guardando credenciales...${RESET}"
@@ -392,7 +423,7 @@ if command -v bun &>/dev/null; then
         }
     fi
 
-    # 👇 Aseguramos instalación de baileys
+    # Aseguramos instalación de baileys
     echo -e "${GREEN}Verificando e instalando @whiskeysockets/baileys...${RESET}"
     bun add @whiskeysockets/baileys || {
         echo -e "${RED}❌ No se pudo instalar @whiskeysockets/baileys${RESET}"
@@ -405,14 +436,13 @@ else
         exit 1
     }
 
-    # 👇 También lo instalamos por npm en caso necesario
+    # También lo instalamos por npm en caso necesario
     echo -e "${GREEN}Verificando e instalando @whiskeysockets/baileys...${RESET}"
     npm install @whiskeysockets/baileys || {
         echo -e "${RED}❌ No se pudo instalar @whiskeysockets/baileys${RESET}"
         exit 1
     }
 fi
-
 
 echo -e "${GREEN}✅ Dependencias instaladas${RESET}"
 
@@ -462,6 +492,7 @@ setup_firewall
 setup_nginx
 
 # Verificar configuración de Nginx
+echo -e "${BLUE}🔍 Verificando configuración de Nginx...${RESET}"
 if sudo nginx -t; then
     sudo systemctl reload nginx
     echo -e "${GREEN}✅ Nginx configurado correctamente${RESET}"
@@ -470,6 +501,7 @@ if sudo nginx -t; then
     setup_certbot
 else
     echo -e "${RED}❌ Error en la configuración de Nginx${RESET}"
+    sudo nginx -t
     exit 1
 fi
 
