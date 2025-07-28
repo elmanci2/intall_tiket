@@ -1,4 +1,57 @@
 #!/bin/bash
+
+
+
+#!/bin/bash
+
+echo "🚨 ADVERTENCIA: Esto eliminará TODO lo relacionado con Docker y Certbot."
+
+read -p "¿Estás seguro? (y/n): " CONFIRM
+if [[ "$CONFIRM" != "y" ]]; then
+  echo "Cancelado."
+  exit 1
+fi
+
+echo "✅ Limpiando Docker..."
+
+# 1. Eliminar contenedores, volúmenes, redes, imágenes
+docker container stop $(docker ps -aq) 2>/dev/null
+docker system prune -af --volumes
+docker volume prune -f
+docker network prune -f
+docker rmi -f $(docker images -aq) 2>/dev/null
+docker builder prune -af
+
+# 2. Borrar directorios de volúmenes y config si los hubiera
+rm -rf /var/lib/docker
+rm -rf ~/.docker
+
+echo "✅ Docker limpio."
+
+echo "🧹 Limpiando Certbot (Let's Encrypt)..."
+
+# 3. Borrar todos los certificados y configuraciones de Certbot
+sudo systemctl stop certbot.timer 2>/dev/null
+sudo systemctl disable certbot.timer 2>/dev/null
+rm -rf /etc/letsencrypt
+rm -rf /var/lib/letsencrypt
+rm -rf /var/log/letsencrypt
+
+echo "✅ Certificados y configuraciones de Certbot eliminados."
+
+# 4. Opcional: Borrar configuraciones de NGINX o Caddy si usabas los certificados allí
+read -p "¿Quieres borrar configuraciones de NGINX o Caddy? (y/n): " CONFIRM_2
+if [[ "$CONFIRM_2" == "y" ]]; then
+  rm -rf /etc/nginx/sites-available
+  rm -rf /etc/nginx/sites-enabled
+  rm -rf /etc/caddy/Caddyfile
+  echo "🧨 Configuraciones de NGINX y Caddy borradas."
+fi
+
+echo "🧼 Entorno limpio como nuevo."
+
+
+
 set -e
 
 GREEN="\033[0;32m"
